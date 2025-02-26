@@ -1,0 +1,372 @@
+
+local player = game.Players.LocalPlayer
+local Frame = script.Parent
+Frame.Visible = not Frame.Visible
+local Amount_of_spaces = 10
+
+local prompt = workspace["crafting table"].ProximityPrompt
+prompt.ObjectText = "Craft"
+prompt.ActionText = "Grab"
+prompt.HoldDuration = 0
+prompt.RequiresLineOfSight = true
+prompt.MaxActivationDistance = 10
+
+-- Define crafting recipes
+local recipes = {
+	{
+    	pattern = {
+        	{1, "Wood"},
+		},
+		result = "Woodblock"
+	},
+	{
+		pattern = {
+			{2, "Wood"},
+		},
+		result = "Woodblock"
+	},
+	{
+		pattern = {
+			{3, "Wood"},
+		},
+		result = "Woodblock"
+	},
+	{
+		pattern = {
+			{4, "Wood"},
+		},
+		result = "Woodblock"
+	},
+	{
+		pattern = {
+			{2, "Woodblock"},
+			{4, "Woodblock"}
+		},
+		result = "Stick"
+	},
+	{
+		pattern = {
+			{1, "Woodblock"},
+			{3, "Woodblock"}
+		},
+		result = "Stick"
+	},
+	{
+		pattern = {
+			{1, "Woodblock"},
+			{2, "Woodblock"},
+			{3, "Woodblock"},
+			{4, "Woodblock"}
+		},
+		result = "crafting table"
+	}
+	-- Can add more reciepes here
+}
+
+-- Open/close crafting table
+prompt.Triggered:Connect(function(player)
+	Frame.Visible = not Frame.Visible
+end)
+
+prompt.PromptHidden:Connect(function()
+	Frame.Visible = false
+end)
+
+-- Find all buttons automatically
+local buttons = {}
+local buttonStates = {}  -- Moved outside to track all buttons
+
+for _, obj in pairs(script.Parent:GetChildren()) do
+	if obj:IsA("TextButton") and obj.Name:match("^Button%d+$") then
+		table.insert(buttons, obj)
+	end
+end
+
+table.sort(buttons, function(a, b)
+	local numA = tonumber(a.Name:match("%d+"))
+	local numB = tonumber(b.Name:match("%d+"))
+	return numA < numB
+end)
+
+-- Function to return all crafting slot items to inventory when closing the frame
+Frame:GetPropertyChangedSignal("Visible"):Connect(function()
+	if not Frame.Visible then
+		-- Return items from all craft slots to inventory
+		for i = 1, 4 do
+			local craftSlot = Frame["craft" .. i]
+			if craftSlot then
+				for _, obj in pairs(craftSlot:GetChildren()) do
+					if obj:IsA("TextButton") and obj.Name:match("^Button%d+$") and obj.Text ~= "" then
+						-- Create tool in backpack
+						local tool = Instance.new("Tool")
+						tool.Name = obj.Text
+						tool.Parent = player.Backpack
+
+						-- Return button to Frame
+						obj.Parent = Frame
+
+						-- Reset size
+						button.Size = UDim2.new(0.08, 0, 0.102, 0)
+
+						-- Reset position
+						local BUTTON_SPACING = 0.111
+						local BUTTON_Y = 0.843
+						local buttonNumber = tonumber(obj.Name:match("Button(%d+)"))
+						if buttonNumber and buttonNumber <= Amount_of_spaces then
+							local xPosition = BUTTON_SPACING * buttonNumber
+							obj.Position = UDim2.new(xPosition, 0, BUTTON_Y, 0)
+						end
+					end
+				end
+			end
+		end
+
+
+		if Frame.solve then
+			Frame.solve.Text = "" -- Clear solve button
+		end
+	end
+end)
+
+-- Function to create button state
+local function createButtonState(button)
+	return {
+		dragging = false,
+		dragStart = nil,
+		startPos = nil,
+		button = button,
+		hasItem = function()
+			-- A button has an item if it has text
+			return button.Text ~= ""
+		end
+	}
+end
+
+-- Function to check if a button overlaps with a craft button
+local function getOverlappingButton(button)
+	for i = 1, 4 do
+		local craftButton = Frame:FindFirstChild("craft" .. i)
+		if craftButton and craftButton:IsA("TextButton") then
+			local buttonBounds = button.AbsolutePosition
+			local buttonSize = button.AbsoluteSize
+			local craftBounds = craftButton.AbsolutePosition
+			local craftSize = craftButton.AbsoluteSize
+
+			if buttonBounds.X < craftBounds.X + craftSize.X and
+				buttonBounds.X + buttonSize.X > craftBounds.X and
+				buttonBounds.Y < craftBounds.Y + craftSize.Y and
+				buttonBounds.Y + buttonSize.Y > craftBounds.Y then
+				return craftButton
+			end
+		end
+	end
+	return nil
+end
+
+-- Function to update button position while dragging
+local function updatePosition(state, input)
+	local delta = input.Position - state.dragStart
+	state.button.Position = UDim2.new(
+		state.startPos.X.Scale, state.startPos.X.Offset + delta.X,
+		state.startPos.Y.Scale, state.startPos.Y.Offset + delta.Y
+	)
+end
+
+-- Function to check if current craft slots match any recipe
+local function checkRecipes()
+	local solveButton = Frame:FindFirstChild("solve")
+	if not solveButton then return end
+
+	-- Clear the solve button first
+	solveButton.Text = ""
+
+	-- Get all items in craft slots
+	local craftItems = {}
+	for i = 1, 4 do
+		local craftSlot = Frame:FindFirstChild("craft" .. i)
+		if craftSlot then
+			for _, button in pairs(craftSlot:GetChildren()) do
+				if button:IsA("TextButton") and button.Text ~= "" then
+					table.insert(craftItems, {slot = i, item = button.Text})
+				end
+			end
+		end
+	end
+
+	-- Check if craft items match any recipe
+	for _, recipe in ipairs(recipes) do
+		local matchCount = 0
+		local requiredMatches = #recipe.pattern
+
+		for _, pattern in ipairs(recipe.pattern) do
+			local slotNum, itemName = pattern[1], pattern[2]
+
+			-- Check if this pattern element exists in craft items
+			for _, craftItem in ipairs(craftItems) do
+				if craftItem.slot == slotNum and craftItem.item == itemName then
+					matchCount = matchCount + 1
+					break
+				end
+			end
+		end
+
+		-- If all elements match, we found a valid recipe
+		if matchCount == requiredMatches and #craftItems == requiredMatches then
+			solveButton.Text = recipe.result
+			break
+		end
+	end
+end
+
+
+local solveButton = Frame:FindFirstChild("solve")
+if solveButton then
+	solveButton.MouseButton1Click:Connect(function()
+		if solveButton.Text ~= "" then
+			-- Create the crafted item
+			local tool = Instance.new("Tool")
+			tool.Name = solveButton.Text
+			tool.Parent = player.Backpack
+
+			-- Remove ingredients from craft slots and reset buttons
+			for i = 1, 4 do
+				local craftSlot = Frame:FindFirstChild("craft" .. i)
+				if craftSlot then
+					for _, button in pairs(craftSlot:GetChildren()) do
+						if button:IsA("TextButton") then
+							-- Move button back to Frame
+							button.Parent = Frame
+							button.Size = UDim2.new(0.08, 0, 0.102, 0)
+
+							-- Reset button position
+							local BUTTON_SPACING = 0.111
+							local BUTTON_Y = 0.843
+							local buttonNumber = tonumber(button.Name:match("Button(%d+)"))
+							if buttonNumber and buttonNumber <= Amount_of_spaces then
+								local xPosition = BUTTON_SPACING * buttonNumber
+								button.Position = UDim2.new(xPosition, 0, BUTTON_Y, 0)
+							end
+						end
+					end
+				end
+			end
+
+			-- Clear solve button
+			solveButton.Text = ""
+		end
+	end)
+end
+
+-- Setup for draggable buttons
+local userInputService = game:GetService("UserInputService")
+
+for _, button in ipairs(buttons) do
+	local state = createButtonState(button)
+	state.destroyed_check = false
+	buttonStates[button] = state
+
+	button.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if state.hasItem() then
+				state.dragging = true
+				state.dragStart = input.Position
+				state.startPos = button.Position
+			end
+		end
+	end)
+
+	button.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			state.dragging = false
+			local targetButton = getOverlappingButton(button)
+
+			if targetButton then
+				-- Store the button text before moving
+				local buttonText = button.Text
+
+				-- Remove item from backpack
+				local player = game.Players.LocalPlayer
+				local backpack = player:WaitForChild("Backpack")
+				local itemToDestroy = backpack:FindFirstChild(buttonText)
+				if itemToDestroy then
+					itemToDestroy:Destroy()
+					state.destroyed_check = true
+				end
+
+				-- Move button to craft slot
+				button.Parent = targetButton
+				button.Position = UDim2.new(0, 0, 0, 0)
+				button.Size = UDim2.new(1, 0, 1, 0)
+
+				-- Make sure text is preserved
+				button.Text = buttonText
+
+				-- Check for valid recipes
+				checkRecipes()
+			elseif state.destroyed_check and not getOverlappingButton(button) then
+				-- Create item in backpack when removing from craft slot
+				local tool = Instance.new("Tool")
+				tool.Name = button.Text
+				tool.Parent = player.Backpack
+
+				-- Return button to Frame
+				button.Parent = Frame
+				state.destroyed_check = false
+				button.Size = UDim2.new(0.08, 0, 0.102, 0)
+
+				-- Reset position
+				local BUTTON_SPACING = 0.111
+				local BUTTON_Y = 0.843
+				local buttonNumber = tonumber(button.Name:match("Button(%d+)"))
+				if buttonNumber and buttonNumber <= Amount_of_spaces then
+					local xPosition = BUTTON_SPACING * buttonNumber
+					button.Position = UDim2.new(xPosition, 0, BUTTON_Y, 0)
+				end
+
+				-- Check recipes again
+				checkRecipes()
+			end
+		end
+	end)
+end
+
+-- Update all dragging buttons
+userInputService.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		for _, state in pairs(buttonStates) do
+			if state.dragging then
+				updatePosition(state, input)
+			end
+		end
+	end
+end)
+
+-- Update inventory display
+local function updateInventoryDisplay()
+	local player = game.Players.LocalPlayer
+	local backpack = player:WaitForChild("Backpack")
+
+	-- Get all inventory buttons in the main frame
+	for i = 1, Amount_of_spaces do
+		local button = Frame:FindFirstChild("Button" .. i)
+		if button and button.Parent == Frame then
+			button.Text = ""  -- Clear the button text
+		end
+	end
+
+	-- For each item in backpack, find an empty button to display it
+	for _, item in ipairs(backpack:GetChildren()) do
+		for i = 1, Amount_of_spaces do
+			local button = Frame:FindFirstChild("Button" .. i)
+			if button and button.Parent == Frame and button.Text == "" then
+				button.Text = item.Name
+				break
+			end
+		end
+	end
+end
+
+-- Run the update function every frame
+game:GetService("RunService").Heartbeat:Connect(function()
+	updateInventoryDisplay()
+end)
