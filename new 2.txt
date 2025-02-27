@@ -7,7 +7,7 @@ local Amount_of_spaces = 10
 local prompt = workspace["crafting table"].ProximityPrompt
 prompt.ObjectText = "Craft"
 prompt.ActionText = "Grab"
-prompt.HoldDuration = 0
+prompt.HoldDuration = 0.1
 prompt.RequiresLineOfSight = true
 prompt.MaxActivationDistance = 10
 
